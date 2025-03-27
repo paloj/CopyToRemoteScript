@@ -18,7 +18,8 @@ function Initialize-Storage {
             "nickname;path" | Out-File -Encoding utf8 -FilePath $targetsFile
             Write-Host "Storage initialized. You can now add targets."
         }
-    } catch {
+    }
+    catch {
         Write-Error "Failed to initialize storage: $($_.Exception.Message)"
         exit 1
     }
@@ -48,7 +49,8 @@ function Get-Targets {
             }
         }
         return $targets
-    } catch {
+    }
+    catch {
         Write-Error "Error loading target list. CSV might be corrupted or improperly formatted. Error: $($_.Exception.Message)"
         return @()
     }
@@ -68,23 +70,26 @@ function Save-Targets {
         }
         $csvLines | Out-File -Encoding utf8 -FilePath $targetsFile -Force
         Write-Host "Targets saved to $targetsFile"
-    } catch {
+    }
+    catch {
         Write-Error "Failed to save targets: $($_.Exception.Message)"
     }
 }
 
 function Show-Menu {
-    Write-Host "1. Create new target location"
-    Write-Host "2. Remove target location"
-    Write-Host "3. Create right-click menu item"
-    Write-Host "4. Uninstall right-click menu"
+    Write-Host "1. Create new target location (cmd)"
+    Write-Host "2. Create new target location (Prompt folder selection)"
+    Write-Host "3. Remove target location"
+    Write-Host "4. Create right-click menu item"
+    Write-Host "5. Uninstall right-click menu"
     Write-Host "0. Exit"
     $choice = Read-Host "Select an option"
     switch ($choice) {
         '1' { Add-Target }
-        '2' { Remove-Target }
-        '3' { New-ContextMenu }
-        '4' { Remove-ContextMenu }
+        '2' { Add-TargetPrompt }
+        '3' { Remove-Target }
+        '4' { New-ContextMenu }
+        '5' { Remove-ContextMenu }
         '0' { exit }
         default { Write-Host "Invalid choice"; Show-Menu }
     }
@@ -93,8 +98,20 @@ function Show-Menu {
 function Add-Target {
     # Force the result of Get-Targets into an array
     $targets = @(Get-Targets)
-    $nickname = Read-Host "Enter a nickname for the target"
+
     $path = Read-Host "Enter the path for the target"
+    # Validate the path
+    if (!(Test-Path $path)) {
+        Write-Host "Invalid path. Please enter a valid path."
+        return
+    }
+        
+    $nickname = Read-Host "Enter a nickname for the target $path"
+    # Check if the nickname already exists
+    if ($targets | Where-Object { $_.nickname -eq $nickname }) {
+        Write-Host "Nickname already exists. Please choose a different one."
+        return
+    }   
 
     # Create a new target object
     $newTarget = [PSCustomObject]@{
@@ -109,6 +126,40 @@ function Add-Target {
     Save-Targets $targets
     New-ContextMenu
     Write-Host "Target added and context menu updated."
+}
+
+function Add-TargetPrompt {
+    Add-Type -AssemblyName System.Windows.Forms
+    $folderBrowser = New-Object System.Windows.Forms.FolderBrowserDialog
+    $dialogResult = $folderBrowser.ShowDialog()
+    if ($dialogResult -eq [System.Windows.Forms.DialogResult]::OK) {
+        $path = $folderBrowser.SelectedPath
+        $nickname = Read-Host "Enter a nickname for the target $path"
+        # Validate the path
+        if (!(Test-Path $path)) {
+            Write-Host "Invalid path. Please enter a valid path."
+            return
+        }
+        # Check if the nickname already exists
+        if ($targets | Where-Object { $_.nickname -eq $nickname }) {
+            Write-Host "Nickname already exists. Please choose a different one."
+            return
+        }
+
+        $targets = @(Get-Targets)
+        $newTarget = [PSCustomObject]@{
+            nickname = $nickname
+            path     = $path
+        }
+        $targets += $newTarget
+        Save-Targets $targets
+        New-ContextMenu
+        Write-Host "Target added and context menu updated."
+    }
+    else {
+        Write-Host "Folder selection cancelled."
+    }
+    Show-Menu
 }
 
 function Remove-Target {
@@ -135,13 +186,15 @@ function Remove-Target {
         if ($targets.Count -eq 0) {
             Remove-Item -Path $targetsFile -Force -ErrorAction SilentlyContinue
             Write-Host "All targets removed. CSV file deleted."
-        } else {
+        }
+        else {
             Save-Targets $targets  # Save the updated list to the CSV file
         }
 
         New-ContextMenu        # Update the context menu
         Write-Host "Target removed and context menu updated."
-    } else {
+    }
+    else {
         Write-Host "Invalid selection."
     }
 
@@ -164,7 +217,7 @@ function New-ContextMenu {
             if (-not [string]::IsNullOrWhiteSpace($target.nickname)) {
                 $sub = New-Item -Path (Join-Path $subCmdPath $target.nickname) -Force
                 # Remove newlines and escape quotes from script path
-                $escapedScriptPath = ($scriptPath -replace '[\r\n]+','') -replace '"','""'
+                $escapedScriptPath = ($scriptPath -replace '[\r\n]+', '') -replace '"', '""'
                 $cmd = "powershell.exe -NoProfile -WindowStyle Normal -ExecutionPolicy Bypass -File `"$escapedScriptPath`" -SourcePath `"%1`" -TargetNickname `"$($target.nickname)`""
                 # Ensure the command is a single line (remove any stray newlines)
                 $cmd = $cmd -replace "[\r\n]+", " "
@@ -190,7 +243,8 @@ function Remove-ContextMenu {
         if (Test-Path $keyPath) {
             Remove-Item -Path $keyPath -Recurse -Force
             Write-Host "Context menu removed."
-        } else {
+        }
+        else {
             Write-Host "Context menu not found."
         }
     }
@@ -221,7 +275,8 @@ function Copy-With-Versioning($source, $targetBase) {
 
     try {
         New-Item -ItemType Directory -Path $targetPath -Force | Out-Null
-    } catch {
+    }
+    catch {
         Write-Error "Failed to create target directory: $($_.Exception.Message)"
         exit 1
     }
@@ -229,7 +284,8 @@ function Copy-With-Versioning($source, $targetBase) {
     robocopy "$source" "$targetPath" /E /Z /MT:32 /NDL /NFL /ETA
     if ($LASTEXITCODE -ge 8) {
         Write-Error "Robocopy failed with exit code $LASTEXITCODE"
-    } else {
+    }
+    else {
         Write-Host "Copied successfully to $targetPath"
     }
 }
@@ -245,7 +301,8 @@ if ($PSBoundParameters.ContainsKey('SourcePath') -and $PSBoundParameters.Contain
     }
     Copy-With-Versioning -source $SourcePath -targetBase $target.path
     exit
-} else {
+}
+else {
     Show-Menu
 }
 # End of script
