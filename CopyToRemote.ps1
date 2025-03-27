@@ -11,9 +11,10 @@ param(
 # The script uses a CSV file to store target locations and their nicknames, making it easy to manage multiple targets.
 # The script also includes error handling to ensure that the user is informed of any issues that arise during execution.
 
-# Exclusions for files and folders to be ignored during the copy process.
-# These can be modified as per user requirements.
-$exclusions = @("Thumbs.db", ".DS_Store")
+# OPTIONS
+$exclusions = @("Thumbs.db", ".DS_Store") # Example exclusions
+$EnableLog = $true  # Set to $false to disable robocopy log file creation
+$AskEnter = $true # Set to $false to disable the prompt for pressing Enter after copying
 
 # The storage path for the CSV file that contains target locations.
 # This is set to the user's AppData folder to ensure it is user-specific and not system-wide.
@@ -317,33 +318,47 @@ function Copy-With-Versioning($source, $targetBase) {
         exit 1
     }
 
-    # List of excluded files and folders
-    $exclusionArgs = $exclusions | ForEach-Object { "/XF $_" } + $exclusions | ForEach-Object { "/XD $_" }
-    $exclusionArgs = $exclusionArgs -join " "
+    # Build an array for robocopy parameters
+    $robocopyArgs = @(
+        "$source",
+        "$targetPath",
+        "/V",
+        "/S",
+        "/E",
+        "/DCOPY:DA",
+        "/COPY:DAT",
+        "/Z",
+        "/ETA",
+        "/TEE",
+        "/MT:32",
+        "/R:2",
+        "/W:10"
+    )
+    # Add exclusion parameters separately
+    $robocopyArgs += ($exclusions | ForEach-Object { "/XF"; $_ })
+    $robocopyArgs += ($exclusions | ForEach-Object { "/XD"; $_ })
 
-    $exclusionArgs = $exclusionArgs -replace '\s+', ' '  # Normalize spaces
-    $exclusionArgs = $exclusionArgs.Trim()  # Trim leading/trailing spaces   
+    # Add optional logging parameter if enabled
+    if ($EnableLog) {
+        $robocopyArgs += "/LOG+:`"$targetPath\robocopy.log`""
+    }
 
-    # Use Robocopy to copy files and folders
-    # Explanation of Robocopy options:
-    # /V - Verbose output
-    # /S - Copy subdirectories, but not empty ones
-    # /E - Copy all subdirectories, including empty ones
-    # /DCOPY:DA - Copy directory attributes (data and archive)
-    # /COPY:DAT - Copy data, attributes, and timestamps
-    # /Z - Copy files in restartable mode
-    # /ETA - Show estimated time of arrival for each file
-    # /MT:32 - Use multi-threading with 32 threads (adjust as needed)
-    # /R:2 - Retry 2 times on failed copies
-    # /W:10 - Wait 10 seconds between retries
-    # /XF - Exclude files matching the specified names
-    
-    robocopy "$source" "$targetPath" /V /S /E /DCOPY:DA /COPY:DAT /Z /ETA /MT:32 /R:2 /W:10 $exclusionArgs
+    # Call robocopy using splatting
+    robocopy @robocopyArgs
+
     if ($LASTEXITCODE -ge 8) {
         Write-Error "Robocopy failed with exit code $LASTEXITCODE"
     }
     else {
         Write-Host "Copied successfully to $targetPath"
+    }
+
+    # Optionally prompt the user to press Enter before exiting
+    if ($AskEnter) {
+        Read-Host -Prompt "Press Enter to exit"
+    }
+    else {
+        exit 0
     }
 }
 
