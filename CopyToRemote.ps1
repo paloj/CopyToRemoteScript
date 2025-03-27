@@ -281,7 +281,15 @@ function Copy-With-Versioning($source, $targetBase) {
         exit 1
     }
 
-    robocopy "$source" "$targetPath" /E /Z /MT:32 /NDL /NFL /ETA
+    # List of excluded files and folders
+    $exclusions = @("Thumbs.db", ".DS_Store")
+    $exclusionArgs = $exclusions | ForEach-Object { "/XF $_" } + $exclusions | ForEach-Object { "/XD $_" }
+    $exclusionArgs = $exclusionArgs -join " "
+
+    $exclusionArgs = $exclusionArgs -replace '\s+', ' '  # Normalize spaces
+    $exclusionArgs = $exclusionArgs.Trim()  # Trim leading/trailing spaces   
+
+    robocopy "$source" "$targetPath" /V /S /E /DCOPY:DA /COPY:DAT /Z /ETA /MT:32 /R:2 /W:10 $exclusionArgs
     if ($LASTEXITCODE -ge 8) {
         Write-Error "Robocopy failed with exit code $LASTEXITCODE"
     }
