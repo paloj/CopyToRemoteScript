@@ -4,9 +4,24 @@ param(
     [string]$TargetNickname
 )
 
+# This script is designed to be run in PowerShell and provides a menu-driven interface for managing folder copy targets.
+# It allows users to add, remove, and manage target locations for copying files and folders using Robocopy.
+# The script also creates a right-click context menu for easy access to the copy functionality.
+
+# The script uses a CSV file to store target locations and their nicknames, making it easy to manage multiple targets.
+# The script also includes error handling to ensure that the user is informed of any issues that arise during execution.
+
+# Exclusions for files and folders to be ignored during the copy process.
+# These can be modified as per user requirements.
+$exclusions = @("Thumbs.db", ".DS_Store")
+
+# The storage path for the CSV file that contains target locations.
+# This is set to the user's AppData folder to ensure it is user-specific and not system-wide.
 $storagePath = "$env:APPDATA\FolderCopyTargets"
 $targetsFile = "$storagePath\targets.csv"
 
+# Function to initialize the storage directory and CSV file.
+# This function checks if the storage directory exists, and if not, creates it.
 function Initialize-Storage {
     try {
         # Create storage directory if it doesn't exist
@@ -25,6 +40,8 @@ function Initialize-Storage {
     }
 }
 
+# Function to load the target list from the CSV file.
+# It reads the file, processes each line, and returns an array of target objects.
 function Get-Targets {
     Initialize-Storage
     try {
@@ -56,6 +73,8 @@ function Get-Targets {
     }
 }
 
+# Function to save the target list back to the CSV file.
+# It takes an array of target objects and writes them to the file in CSV format.
 function Save-Targets {
     param (
         [Parameter(Mandatory = $true)]
@@ -76,6 +95,8 @@ function Save-Targets {
     }
 }
 
+# Function to display the main menu and handle user input.
+# This function provides a simple text-based menu for the user to interact with.
 function Show-Menu {
     Write-Host "1. Create new target location (cmd)"
     Write-Host "2. Create new target location (Prompt folder selection)"
@@ -95,6 +116,8 @@ function Show-Menu {
     }
 }
 
+# Function to add a new target location.
+# This function prompts the user for a path and a nickname, validates them, and saves the new target to the CSV file.
 function Add-Target {
     # Force the result of Get-Targets into an array
     $targets = @(Get-Targets)
@@ -128,6 +151,9 @@ function Add-Target {
     Write-Host "Target added and context menu updated."
 }
 
+# Function to add a new target location using a folder selection dialog.
+# This function uses Windows Forms to prompt the user for a folder path and a nickname, validates them, and saves the new target to the CSV file.
+# This function is similar to Add-Target but uses a GUI for folder selection.
 function Add-TargetPrompt {
     Add-Type -AssemblyName System.Windows.Forms
     $folderBrowser = New-Object System.Windows.Forms.FolderBrowserDialog
@@ -162,6 +188,8 @@ function Add-TargetPrompt {
     Show-Menu
 }
 
+# Function to remove a target location.
+# This function displays the list of targets, prompts the user to select one, and removes it from the CSV file.
 function Remove-Target {
     $targets = @(Get-Targets)
     if ($targets.Count -eq 0) {
@@ -201,6 +229,10 @@ function Remove-Target {
     Show-Menu
 }
 
+# Function to create a right-click context menu for the script.
+# This function creates a registry entry for the context menu and adds sub-commands for each target location.
+# It uses the script path to ensure that the correct script is executed when the menu item is clicked.
+# The context menu allows users to right-click on a folder and copy it to the specified target locations.
 function New-ContextMenu {
     # Use $PSCommandPath to reliably get the current script file path.
     $scriptPath = $PSCommandPath
@@ -237,6 +269,8 @@ function New-ContextMenu {
     Show-Menu
 }
 
+# Function to remove the right-click context menu.
+# This function deletes the registry entry for the context menu, effectively removing it from the right-click options.
 function Remove-ContextMenu {
     $keyPath = "Registry::HKEY_CURRENT_USER\Software\Classes\Directory\shell\CopyToRemote"
     try {
@@ -254,6 +288,8 @@ function Remove-ContextMenu {
     Show-Menu
 }
 
+# Function to copy files and folders with versioning.
+# This function takes a source path and a target base path, creates a versioned target directory, and uses Robocopy to copy the files.
 function Copy-With-Versioning($source, $targetBase) {
     if (!(Test-Path $source)) {
         Write-Error "Source path does not exist: $source"
@@ -282,13 +318,26 @@ function Copy-With-Versioning($source, $targetBase) {
     }
 
     # List of excluded files and folders
-    $exclusions = @("Thumbs.db", ".DS_Store")
     $exclusionArgs = $exclusions | ForEach-Object { "/XF $_" } + $exclusions | ForEach-Object { "/XD $_" }
     $exclusionArgs = $exclusionArgs -join " "
 
     $exclusionArgs = $exclusionArgs -replace '\s+', ' '  # Normalize spaces
     $exclusionArgs = $exclusionArgs.Trim()  # Trim leading/trailing spaces   
 
+    # Use Robocopy to copy files and folders
+    # Explanation of Robocopy options:
+    # /V - Verbose output
+    # /S - Copy subdirectories, but not empty ones
+    # /E - Copy all subdirectories, including empty ones
+    # /DCOPY:DA - Copy directory attributes (data and archive)
+    # /COPY:DAT - Copy data, attributes, and timestamps
+    # /Z - Copy files in restartable mode
+    # /ETA - Show estimated time of arrival for each file
+    # /MT:32 - Use multi-threading with 32 threads (adjust as needed)
+    # /R:2 - Retry 2 times on failed copies
+    # /W:10 - Wait 10 seconds between retries
+    # /XF - Exclude files matching the specified names
+    
     robocopy "$source" "$targetPath" /V /S /E /DCOPY:DA /COPY:DAT /Z /ETA /MT:32 /R:2 /W:10 $exclusionArgs
     if ($LASTEXITCODE -ge 8) {
         Write-Error "Robocopy failed with exit code $LASTEXITCODE"
