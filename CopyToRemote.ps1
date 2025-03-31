@@ -99,6 +99,7 @@ function Save-Targets {
 # Function to display the main menu and handle user input.
 # This function provides a simple text-based menu for the user to interact with.
 function Show-Menu {
+    Write-Host "=== Folder Copy Tool ==="
     Write-Host "1. Create new target location (cmd)"
     Write-Host "2. Create new target location (Prompt folder selection)"
     Write-Host "3. Remove target location"
@@ -128,33 +129,40 @@ function Show-Menu {
 # Function to add a new target location.
 # This function prompts the user for a path and a nickname, validates them, and saves the new target to the CSV file.
 function Add-Target {
-    # Force the result of Get-Targets into an array
     $targets = @(Get-Targets)
 
     $path = Read-Host "Enter the path for the target"
-    # Validate the path
+
+    # Check if the path exists
     if (!(Test-Path $path)) {
-        Write-Host "Invalid path. Please enter a valid path."
-        return
+        $createChoice = Read-Host "Path '$path' does not exist. Create it? (y/n)"
+        if ($createChoice -eq 'y') {
+            try {
+                New-Item -ItemType Directory -Path $path -Force | Out-Null
+            }
+            catch {
+                Write-Host "Failed to create the directory: $($_.Exception.Message)"
+                return
+            }
+        }
+        else {
+            Write-Host "Creation skipped."
+            return
+        }
     }
-        
+
     $nickname = Read-Host "Enter a nickname for the target $path"
-    # Check if the nickname already exists
     if ($targets | Where-Object { $_.nickname -eq $nickname }) {
         Write-Host "Nickname already exists. Please choose a different one."
         return
-    }   
+    }
 
-    # Create a new target object
     $newTarget = [PSCustomObject]@{
         nickname = $nickname
         path     = $path
     }
 
-    # Add the new target to the array
     $targets += $newTarget
-
-    # Save the updated targets
     Save-Targets $targets
     New-ContextMenu
     Write-Host "Target added and context menu updated."
@@ -272,14 +280,15 @@ function New-ContextMenu {
         }
 
         # Add "Menu" option below the separator that runs the script with no parameters.
-        $menuKey = Join-Path $subCmdPath "Menu"
+        $menuKey = Join-Path $subCmdPath "zzzShowMenu"
         New-Item -Path $menuKey -Force | Out-Null
         Set-ItemProperty -Path $menuKey -Name "MUIVerb" -Value "--Show Menu--"
+
         $menuCommandKey = Join-Path $menuKey "command"
         New-Item -Path $menuCommandKey -Force | Out-Null
         $menuCmd = "powershell.exe -NoProfile -WindowStyle Normal -ExecutionPolicy Bypass -File `"$PSCommandPath`""
         $menuCmd = $menuCmd -replace "[\r\n]+", " "
-        New-ItemProperty -Path $menuCommandKey -Name "(default)" -Value $menuCmd -PropertyType String -Force | Out-Null
+        New-ItemProperty -Path $menuCommandKey -Name "(default)" -Value $menuCmd -Force | Out-Null
 
         #Write-Host "Right-click context menu created."
     }
@@ -321,6 +330,8 @@ function Show-Targets {
             Write-Host "$($target.nickname) => $($target.path)"
         }
     }
+    Write-Host "Press Enter to continue..."
+    Read-Host
     Show-Menu
 }
 
@@ -334,14 +345,28 @@ function Test-Targets {
         return
     }
 
+    $failedTargetsAmount = 0
+
+    Write-Host "=== Testing target paths: ==="
+
     foreach ($target in $targets) {
         if (Test-Path $target.path) {
             Write-Host "$($target.nickname) => $($target.path) [OK]"
         }
         else {
             Write-Host "$($target.nickname) => $($target.path) [NOT FOUND]"
+            $failedTargetsAmount++
         }
     }
+    Write-Host "=== End of test ==="
+    if ($failedTargetsAmount -eq 0) {
+        Write-Host "All target paths are valid."
+    }
+    else {
+        Write-Host "$failedTargetsAmount target(s) not found."
+    }
+    Write-Host "Press Enter to continue..."
+    Read-Host
     Show-Menu
 }
 
