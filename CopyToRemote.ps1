@@ -12,7 +12,7 @@ param(
 # The script also includes error handling to ensure that the user is informed of any issues that arise during execution.
 
 # OPTIONS
-$exclusions = @("Thumbs.db", ".DS_Store") # Example exclusions
+$exclusions = @("Thumbs.db", ".DS_Store", "*bk") # Example exclusions
 $EnableLog = $true  # Set to $false to disable robocopy log file creation
 $AskEnter = $true # Set to $false to disable the prompt for pressing Enter after copying
 
@@ -46,7 +46,7 @@ function Initialize-Storage {
 function Get-Targets {
     Initialize-Storage
     try {
-        Write-Host "Loading target list from $targetsFile"
+        #Write-Host "Loading target list from $targetsFile"
         if (!(Test-Path $targetsFile) -or ((Get-Content $targetsFile -Raw).Trim()) -eq "") {
             return @()  # Return an empty array if the file is empty
         }
@@ -89,7 +89,7 @@ function Save-Targets {
             $csvLines += "$($target.nickname);$($target.path)"
         }
         $csvLines | Out-File -Encoding utf8 -FilePath $targetsFile -Force
-        Write-Host "Targets saved to $targetsFile"
+        #Write-Host "Targets saved to $targetsFile"
     }
     catch {
         Write-Error "Failed to save targets: $($_.Exception.Message)"
@@ -102,8 +102,12 @@ function Show-Menu {
     Write-Host "1. Create new target location (cmd)"
     Write-Host "2. Create new target location (Prompt folder selection)"
     Write-Host "3. Remove target location"
-    Write-Host "4. Create right-click menu item"
-    Write-Host "5. Uninstall right-click menu"
+    Write-Host "4. Create/Update right-click backup menu"
+    Write-Host "5. Uninstall right-click backup menu"
+    Write-Host "6. Show target list"
+    Write-Host "7. Open script location"
+    Write-Host "8. Open targets CSV file location"
+    Write-Host "9. Test all targets"
     Write-Host "0. Exit"
     $choice = Read-Host "Select an option"
     switch ($choice) {
@@ -112,6 +116,10 @@ function Show-Menu {
         '3' { Remove-Target }
         '4' { New-ContextMenu }
         '5' { Remove-ContextMenu }
+        '6' { Show-Targets }
+        '7' { Start-Process -FilePath $PSScriptRoot }
+        '8' { Start-Process -FilePath $storagePath }
+        '9' { Test-Targets }                       
         '0' { exit }
         default { Write-Host "Invalid choice"; Show-Menu }
     }
@@ -262,7 +270,18 @@ function New-ContextMenu {
                 New-ItemProperty -Path $commandKey -Name '(default)' -Value $cmd -PropertyType String -Force | Out-Null
             }
         }
-        Write-Host "Right-click context menu created."
+
+        # Add "Menu" option below the separator that runs the script with no parameters.
+        $menuKey = Join-Path $subCmdPath "Menu"
+        New-Item -Path $menuKey -Force | Out-Null
+        Set-ItemProperty -Path $menuKey -Name "MUIVerb" -Value "--Show Menu--"
+        $menuCommandKey = Join-Path $menuKey "command"
+        New-Item -Path $menuCommandKey -Force | Out-Null
+        $menuCmd = "powershell.exe -NoProfile -WindowStyle Normal -ExecutionPolicy Bypass -File `"$PSCommandPath`""
+        $menuCmd = $menuCmd -replace "[\r\n]+", " "
+        New-ItemProperty -Path $menuCommandKey -Name "(default)" -Value $menuCmd -PropertyType String -Force | Out-Null
+
+        #Write-Host "Right-click context menu created."
     }
     catch {
         Write-Error "Failed to create context menu: $($_.Exception.Message)"
@@ -285,6 +304,43 @@ function Remove-ContextMenu {
     }
     catch {
         Write-Error "Failed to remove context menu: $($_.Exception.Message)"
+    }
+    Show-Menu
+}
+
+# Function to list all targets and their paths.
+# This function retrieves the target list from the CSV file and displays it to the user.
+function Show-Targets {
+    $targets = Get-Targets
+    if ($targets.Count -eq 0) {
+        Write-Host "No targets found."
+    }
+    else {
+        Write-Host "Current targets:"
+        foreach ($target in $targets) {
+            Write-Host "$($target.nickname) => $($target.path)"
+        }
+    }
+    Show-Menu
+}
+
+# Function to test the existence of target paths.
+# This function checks if each target path exists and displays the result to the user.
+# It uses the Test-Path cmdlet to verify the existence of each path.
+function Test-Targets {
+    $targets = Get-Targets
+    if ($targets.Count -eq 0) {
+        Write-Host "No targets found."
+        return
+    }
+
+    foreach ($target in $targets) {
+        if (Test-Path $target.path) {
+            Write-Host "$($target.nickname) => $($target.path) [OK]"
+        }
+        else {
+            Write-Host "$($target.nickname) => $($target.path) [NOT FOUND]"
+        }
     }
     Show-Menu
 }
